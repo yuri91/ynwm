@@ -1,5 +1,7 @@
 use wlroots_sys::*;
 use wlroots_sys::wayland_sys::server::signal::wl_signal_add;
+use wlroots_sys::wayland_server::protocol::wl_seat::Capability;
+use wlroots_sys::wlr_log_importance::*;
 
 use std::marker::PhantomPinned;
 use std::pin::Pin;
@@ -20,6 +22,8 @@ pub struct Server {
     output_layout: *mut wlr_output_layout,
 
     socket_name: String,
+
+    outputs: Vec<Pin<Box<Output>>>,
 
     backend_new_output_listener: wl_listener,
     backend_new_input_listener: wl_listener,
@@ -47,7 +51,10 @@ impl Server {
             cursor_mgr: std::ptr::null_mut(),
             seat: std::ptr::null_mut(),
             output_layout: std::ptr::null_mut(),
+
             socket_name: String::new(),
+
+            outputs: Vec::new(),
 
             backend_new_output_listener: unsafe {std::mem::zeroed()},
             backend_new_input_listener: unsafe {std::mem::zeroed()},
@@ -142,14 +149,43 @@ implement_listener!(Server, cursor, axis, wlr_event_pointer_axis);
 implement_listener!(Server, cursor, frame, libc::c_void);
 implement_listener!(Server, seat, request_set_cursor, wlr_seat_pointer_request_set_cursor_event);
 impl Server {
-    fn backend_new_output(self: Pin<&mut Self>, output: *mut wlr_output) {
-        println!("new output!");
-    }
-    fn backend_new_input(self: Pin<&mut Self>, input: *mut wlr_input_device) {
+    fn backend_new_output(self: Pin<&mut Self>, output_ptr: *mut wlr_output) {
+        wlr_log!(WLR_INFO,"new output!");
+
+        let output = Output::new(&self.as_ref(), output_ptr);
         unsafe {
-            let ctx = self.get_unchecked_mut();
-            wlr_cursor_attach_input_device(ctx.cursor, input);
+            // check that list is not empty
+            if (*output_ptr).modes.next != &(*output_ptr).modes as *const _ as *mut _ {
+                let mode = container_of!((*output_ptr).modes.prev, wlr_output_mode, link);
+                wlr_output_set_mode(output_ptr, mode);
+            }
+            wlr_output_layout_add_auto(self.as_ref().output_layout, output_ptr);
         }
+
+        let ctx = unsafe {self.get_unchecked_mut()};
+        ctx.outputs.push(output);
+    }
+    fn backend_new_input(self: Pin<&mut Self>, input_ptr: *mut wlr_input_device) {
+        // UNSAFE: promise that we will not move the value out of ctx
+        let ctx = unsafe {self.get_unchecked_mut()};
+        let input = unsafe {&*input_ptr};
+        match input.type_ {
+            wlr_input_device_type::WLR_INPUT_DEVICE_POINTER => {
+                unsafe {
+                    wlr_cursor_attach_input_device(ctx.cursor, input_ptr);
+                }
+            },
+            wlr_input_device_type::WLR_INPUT_DEVICE_KEYBOARD => {
+            },
+            _ => {
+            }
+        }
+
+        let caps = Capability::Pointer;
+        unsafe {
+            wlr_seat_set_capabilities(ctx.seat, caps.to_raw());
+        }
+
     }
     fn xdg_shell_new_surface(self: Pin<&mut Self>, surface: *mut wlr_xdg_surface) {
         println!("new xdg surface!");
@@ -174,3 +210,37 @@ impl Server {
     }
 }
 
+#[repr(C)]
+pub struct Output {
+    server: *mut Server,
+    output: *mut wlr_output,
+
+    output_frame_listener: wl_listener,
+}
+
+impl Output {
+    pub fn new(server: &Server, output: *mut wlr_output) -> Pin<Box<Output>> {
+        let o = Output {
+            server: server as *const _ as *mut _,
+            output,
+            output_frame_listener: unsafe{std::mem::zeroed()},
+        };
+        let mut o = Box::pin(o);
+
+        unsafe {
+            let ctx = o.as_mut().get_unchecked_mut();
+
+            connect_listener!(ctx, output, frame);
+
+            wlr_output_create_global(output);
+        }
+
+        o
+    }
+}
+
+implement_listener!(Output, output, frame, libc::c_void);
+impl Output {
+    fn output_frame(self: Pin<&mut Self>, _: *mut libc::c_void) {
+    }
+}

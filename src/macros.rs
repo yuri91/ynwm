@@ -58,11 +58,9 @@ macro_rules! wlr_log {
         macro_rules! c_str {
             ($s:expr) => {
                 concat!($s, "\0").as_ptr()
-                    as *const wlroot_sys::libc::c_char
+                    as *const libc::c_char
     }
         }
-        use wlroot_sys::_wlr_log;
-        use wlroot_sys::wlr_log_importance::*;
         use ::std::ffi::CString;
         unsafe {
             let fmt = CString::new(format!($($msg)*))
