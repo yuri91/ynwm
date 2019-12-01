@@ -3,6 +3,8 @@ use wlroots_sys::wayland_sys::server::signal::wl_signal_add;
 use wlroots_sys::wayland_server::protocol::wl_seat::Capability;
 use wlroots_sys::wlr_log_importance::*;
 
+use generational_arena::{Arena, Index};
+
 use std::marker::PhantomPinned;
 use std::pin::Pin;
 
@@ -23,7 +25,7 @@ pub struct Server {
 
     socket_name: String,
 
-    outputs: Vec<Pin<Box<Output>>>,
+    outputs: Arena<Pin<Box<Output>>>,
 
     backend_new_output_listener: wl_listener,
     backend_new_input_listener: wl_listener,
@@ -54,7 +56,7 @@ impl Server {
 
             socket_name: String::new(),
 
-            outputs: Vec::new(),
+            outputs: Arena::new(),
 
             backend_new_output_listener: unsafe {std::mem::zeroed()},
             backend_new_input_listener: unsafe {std::mem::zeroed()},
@@ -163,7 +165,7 @@ impl Server {
         }
 
         let ctx = unsafe {self.get_unchecked_mut()};
-        ctx.outputs.push(output);
+        ctx.outputs.insert(output);
     }
     fn backend_new_input(self: Pin<&mut Self>, input_ptr: *mut wlr_input_device) {
         // UNSAFE: promise that we will not move the value out of ctx

@@ -8,6 +8,7 @@ edition = "2018"
 
 [dependencies]
 paste = "0.1.6"
+generational-arena = "0.2.6"
 
 [dependencies.wlroots-sys]
 path = "../wlroots-sys"
