@@ -76,9 +76,12 @@ macro_rules! wlr_log {
 
 macro_rules! connect_listener {
     ($ctx:expr, $manager:ident, $event:ident) => {{
+        connect_listener!($ctx, $ctx.$manager, $manager, $event);
+    }};
+    ($ctx:expr, $manager:expr, $manager_ident: ident, $event:ident) => {{
         paste::expr! {
-            $ctx.[<$manager _ $event _listener>].notify = Some(Self::[<$manager _ $event _listener_fn>]);
-            wl_signal_add(&mut (*ctx.$manager).events.$event as *mut _ as _, &mut ctx.[<$manager _ $event _listener>] as *mut _ as _);
+            $ctx.[<$manager_ident _ $event _listener>].notify = Some(Self::[<$manager_ident _ $event _listener_fn>]);
+            wl_signal_add(&mut (*$manager).events.$event as *mut _ as _, &mut ctx.[<$manager_ident _ $event _listener>] as *mut _ as _);
         }
     }}
 }
