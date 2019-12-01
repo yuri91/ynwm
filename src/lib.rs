@@ -1,7 +1,7 @@
-use wlroots_sys::*;
-use wlroots_sys::wayland_sys::server::signal::wl_signal_add;
 use wlroots_sys::wayland_server::protocol::wl_seat::Capability;
+use wlroots_sys::wayland_sys::server::signal::wl_signal_add;
 use wlroots_sys::wlr_log_importance::*;
+use wlroots_sys::*;
 
 use generational_arena::{Arena, Index};
 
@@ -60,15 +60,15 @@ impl Server {
             outputs: Arena::new(),
             views: Arena::new(),
 
-            backend_new_output_listener: unsafe {std::mem::zeroed()},
-            backend_new_input_listener: unsafe {std::mem::zeroed()},
-            xdg_shell_new_surface_listener: unsafe {std::mem::zeroed()},
-            cursor_motion_listener: unsafe {std::mem::zeroed()},
-            cursor_motion_absolute_listener: unsafe {std::mem::zeroed()},
-            cursor_button_listener: unsafe {std::mem::zeroed()},
-            cursor_axis_listener: unsafe {std::mem::zeroed()},
-            cursor_frame_listener: unsafe {std::mem::zeroed()},
-            seat_request_set_cursor_listener: unsafe {std::mem::zeroed()},
+            backend_new_output_listener: unsafe { std::mem::zeroed() },
+            backend_new_input_listener: unsafe { std::mem::zeroed() },
+            xdg_shell_new_surface_listener: unsafe { std::mem::zeroed() },
+            cursor_motion_listener: unsafe { std::mem::zeroed() },
+            cursor_motion_absolute_listener: unsafe { std::mem::zeroed() },
+            cursor_button_listener: unsafe { std::mem::zeroed() },
+            cursor_axis_listener: unsafe { std::mem::zeroed() },
+            cursor_frame_listener: unsafe { std::mem::zeroed() },
+            seat_request_set_cursor_listener: unsafe { std::mem::zeroed() },
         });
         unsafe {
             let ctx = c.as_mut().get_unchecked_mut();
@@ -94,7 +94,6 @@ impl Server {
             ctx.cursor_mgr = wlr_xcursor_manager_create(std::ptr::null(), 24);
             wlr_xcursor_manager_load(ctx.cursor_mgr, 1.0);
 
-
             connect_listener!(ctx, cursor, motion);
             connect_listener!(ctx, cursor, motion_absolute);
             connect_listener!(ctx, cursor, button);
@@ -105,12 +104,19 @@ impl Server {
 
             connect_listener!(ctx, seat, request_set_cursor);
 
-            let socket_name_ptr = ffi_dispatch!(WAYLAND_SERVER_HANDLE, wl_display_add_socket_auto, ctx.display as *mut _);
+            let socket_name_ptr = ffi_dispatch!(
+                WAYLAND_SERVER_HANDLE,
+                wl_display_add_socket_auto,
+                ctx.display as *mut _
+            );
             if socket_name_ptr.is_null() {
                 return Err("cannot create socket");
             }
             let socket_name_cstr = std::ffi::CStr::from_ptr(socket_name_ptr);
-            ctx.socket_name = socket_name_cstr.to_str().expect("wayland socket name is not utf8").to_owned();
+            ctx.socket_name = socket_name_cstr
+                .to_str()
+                .expect("wayland socket name is not utf8")
+                .to_owned();
 
             if !wlr_backend_start(ctx.backend) {
                 return Err("cannot start backend");
@@ -118,7 +124,7 @@ impl Server {
         }
         Ok(c)
     }
-    
+
     pub fn main_loop(mut self: Pin<&mut Self>) {
         unsafe {
             let ctx = self.as_mut().get_unchecked_mut();
@@ -131,13 +137,17 @@ impl std::ops::Drop for Server {
     fn drop(&mut self) {
         // `new_unchecked` is okay because we know this value is never used
         // again after being dropped.
-        inner_drop(unsafe { Pin::new_unchecked(self)});
+        inner_drop(unsafe { Pin::new_unchecked(self) });
         fn inner_drop(mut this: Pin<&mut Server>) {
             // Actual drop code goes here.
             unsafe {
                 let ctx = this.as_mut().get_unchecked_mut();
                 wlr_backend_destroy(ctx.backend);
-                ffi_dispatch!(WAYLAND_SERVER_HANDLE, wl_display_destroy, ctx.display as *mut _);
+                ffi_dispatch!(
+                    WAYLAND_SERVER_HANDLE,
+                    wl_display_destroy,
+                    ctx.display as *mut _
+                );
             }
         }
     }
@@ -147,14 +157,24 @@ implement_listener!(Server, backend, new_output, wlr_output);
 implement_listener!(Server, backend, new_input, wlr_input_device);
 implement_listener!(Server, xdg_shell, new_surface, wlr_xdg_surface);
 implement_listener!(Server, cursor, motion, wlr_event_pointer_motion);
-implement_listener!(Server, cursor, motion_absolute, wlr_event_pointer_motion_absolute);
+implement_listener!(
+    Server,
+    cursor,
+    motion_absolute,
+    wlr_event_pointer_motion_absolute
+);
 implement_listener!(Server, cursor, button, wlr_event_pointer_button);
 implement_listener!(Server, cursor, axis, wlr_event_pointer_axis);
 implement_listener!(Server, cursor, frame, libc::c_void);
-implement_listener!(Server, seat, request_set_cursor, wlr_seat_pointer_request_set_cursor_event);
+implement_listener!(
+    Server,
+    seat,
+    request_set_cursor,
+    wlr_seat_pointer_request_set_cursor_event
+);
 impl Server {
     fn backend_new_output(self: Pin<&mut Self>, output_ptr: *mut wlr_output) {
-        wlr_log!(WLR_INFO,"new output!");
+        wlr_log!(WLR_INFO, "new output!");
 
         let output = Output::new(&self.as_ref(), output_ptr);
         unsafe {
@@ -166,30 +186,25 @@ impl Server {
             wlr_output_layout_add_auto(self.as_ref().output_layout, output_ptr);
         }
 
-        let ctx = unsafe {self.get_unchecked_mut()};
+        let ctx = unsafe { self.get_unchecked_mut() };
         ctx.outputs.insert(output);
     }
     fn backend_new_input(self: Pin<&mut Self>, input_ptr: *mut wlr_input_device) {
         // UNSAFE: promise that we will not move the value out of ctx
-        let ctx = unsafe {self.get_unchecked_mut()};
-        let input = unsafe {&*input_ptr};
+        let ctx = unsafe { self.get_unchecked_mut() };
+        let input = unsafe { &*input_ptr };
         match input.type_ {
-            wlr_input_device_type::WLR_INPUT_DEVICE_POINTER => {
-                unsafe {
-                    wlr_cursor_attach_input_device(ctx.cursor, input_ptr);
-                }
+            wlr_input_device_type::WLR_INPUT_DEVICE_POINTER => unsafe {
+                wlr_cursor_attach_input_device(ctx.cursor, input_ptr);
             },
-            wlr_input_device_type::WLR_INPUT_DEVICE_KEYBOARD => {
-            },
-            _ => {
-            }
+            wlr_input_device_type::WLR_INPUT_DEVICE_KEYBOARD => {}
+            _ => {}
         }
 
         let caps = Capability::Pointer;
         unsafe {
             wlr_seat_set_capabilities(ctx.seat, caps.to_raw());
         }
-
     }
     fn xdg_shell_new_surface(self: Pin<&mut Self>, surface_ptr: *mut wlr_xdg_surface) {
         println!("new xdg surface!");
@@ -202,7 +217,7 @@ impl Server {
 
         let view = View::new(&self.as_ref(), surface_ptr);
 
-        let ctx = unsafe {self.get_unchecked_mut()};
+        let ctx = unsafe { self.get_unchecked_mut() };
         ctx.views.insert(view);
     }
     fn cursor_motion(self: Pin<&mut Self>, event: *mut wlr_event_pointer_motion) {
@@ -220,7 +235,10 @@ impl Server {
     fn cursor_frame(self: Pin<&mut Self>, event: *mut libc::c_void) {
         println!("cursor motion!");
     }
-    fn seat_request_set_cursor(self: Pin<&mut Self>, event: *mut wlr_seat_pointer_request_set_cursor_event) {
+    fn seat_request_set_cursor(
+        self: Pin<&mut Self>,
+        event: *mut wlr_seat_pointer_request_set_cursor_event,
+    ) {
         println!("request set cursor!");
     }
 }
@@ -238,7 +256,7 @@ impl Output {
         let o = Output {
             server: server as *const _ as *mut _,
             output,
-            output_frame_listener: unsafe{std::mem::zeroed()},
+            output_frame_listener: unsafe { std::mem::zeroed() },
         };
         let mut o = Box::pin(o);
 
@@ -256,8 +274,7 @@ impl Output {
 
 implement_listener!(Output, output, frame, libc::c_void);
 impl Output {
-    fn output_frame(self: Pin<&mut Self>, _: *mut libc::c_void) {
-    }
+    fn output_frame(self: Pin<&mut Self>, _: *mut libc::c_void) {}
 }
 
 #[repr(C)]
@@ -278,11 +295,11 @@ impl View {
             server: server as *const _ as *mut _,
             xdg_surface,
 
-            xdg_surface_map_listener: unsafe {std::mem::zeroed()},
-            xdg_surface_unmap_listener: unsafe {std::mem::zeroed()},
-            xdg_surface_destroy_listener: unsafe {std::mem::zeroed()},
-            xdg_surface_request_move_listener: unsafe {std::mem::zeroed()},
-            xdg_surface_request_resize_listener: unsafe {std::mem::zeroed()},
+            xdg_surface_map_listener: unsafe { std::mem::zeroed() },
+            xdg_surface_unmap_listener: unsafe { std::mem::zeroed() },
+            xdg_surface_destroy_listener: unsafe { std::mem::zeroed() },
+            xdg_surface_request_move_listener: unsafe { std::mem::zeroed() },
+            xdg_surface_request_resize_listener: unsafe { std::mem::zeroed() },
         };
         let mut v = Box::pin(v);
 
@@ -293,7 +310,8 @@ impl View {
             connect_listener!(ctx, xdg_surface, unmap);
             connect_listener!(ctx, xdg_surface, destroy);
 
-            let toplevel = (*ctx.xdg_surface).__bindgen_anon_1.toplevel as *const _ as *mut wlr_xdg_toplevel;
+            let toplevel =
+                (*ctx.xdg_surface).__bindgen_anon_1.toplevel as *const _ as *mut wlr_xdg_toplevel;
             let toplevel = &mut (*toplevel);
             connect_listener!(ctx, toplevel, xdg_surface, request_move);
             connect_listener!(ctx, toplevel, xdg_surface, request_resize);
@@ -307,7 +325,12 @@ implement_listener!(View, xdg_surface, map, libc::c_void);
 implement_listener!(View, xdg_surface, unmap, libc::c_void);
 implement_listener!(View, xdg_surface, destroy, libc::c_void);
 implement_listener!(View, xdg_surface, request_move, libc::c_void);
-implement_listener!(View, xdg_surface, request_resize, wlr_xdg_toplevel_resize_event);
+implement_listener!(
+    View,
+    xdg_surface,
+    request_resize,
+    wlr_xdg_toplevel_resize_event
+);
 impl View {
     fn xdg_surface_map(self: Pin<&mut Self>, _: *mut libc::c_void) {
         println!("View map!");
