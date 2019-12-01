@@ -26,6 +26,7 @@ pub struct Server {
     socket_name: String,
 
     outputs: Arena<Pin<Box<Output>>>,
+    views: Arena<Pin<Box<View>>>,
 
     backend_new_output_listener: wl_listener,
     backend_new_input_listener: wl_listener,
@@ -57,6 +58,7 @@ impl Server {
             socket_name: String::new(),
 
             outputs: Arena::new(),
+            views: Arena::new(),
 
             backend_new_output_listener: unsafe {std::mem::zeroed()},
             backend_new_input_listener: unsafe {std::mem::zeroed()},
@@ -189,8 +191,19 @@ impl Server {
         }
 
     }
-    fn xdg_shell_new_surface(self: Pin<&mut Self>, surface: *mut wlr_xdg_surface) {
+    fn xdg_shell_new_surface(self: Pin<&mut Self>, surface_ptr: *mut wlr_xdg_surface) {
         println!("new xdg surface!");
+
+        unsafe {
+            if (*surface_ptr).role != wlr_xdg_surface_role::WLR_XDG_SURFACE_ROLE_TOPLEVEL {
+                return;
+            }
+        }
+
+        let view = View::new(&self.as_ref(), surface_ptr);
+
+        let ctx = unsafe {self.get_unchecked_mut()};
+        ctx.views.insert(view);
     }
     fn cursor_motion(self: Pin<&mut Self>, event: *mut wlr_event_pointer_motion) {
         println!("cursor motion!");
@@ -244,5 +257,71 @@ impl Output {
 implement_listener!(Output, output, frame, libc::c_void);
 impl Output {
     fn output_frame(self: Pin<&mut Self>, _: *mut libc::c_void) {
+    }
+}
+
+#[repr(C)]
+pub struct View {
+    server: *mut Server,
+    xdg_surface: *mut wlr_xdg_surface,
+
+    xdg_surface_map_listener: wl_listener,
+    xdg_surface_unmap_listener: wl_listener,
+    xdg_surface_destroy_listener: wl_listener,
+    xdg_surface_request_move_listener: wl_listener,
+    xdg_surface_request_resize_listener: wl_listener,
+}
+
+impl View {
+    pub fn new(server: &Server, xdg_surface: *mut wlr_xdg_surface) -> Pin<Box<View>> {
+        let v = View {
+            server: server as *const _ as *mut _,
+            xdg_surface,
+
+            xdg_surface_map_listener: unsafe {std::mem::zeroed()},
+            xdg_surface_unmap_listener: unsafe {std::mem::zeroed()},
+            xdg_surface_destroy_listener: unsafe {std::mem::zeroed()},
+            xdg_surface_request_move_listener: unsafe {std::mem::zeroed()},
+            xdg_surface_request_resize_listener: unsafe {std::mem::zeroed()},
+        };
+        let mut v = Box::pin(v);
+
+        unsafe {
+            let ctx = v.as_mut().get_unchecked_mut();
+
+            connect_listener!(ctx, xdg_surface, map);
+            connect_listener!(ctx, xdg_surface, unmap);
+            connect_listener!(ctx, xdg_surface, destroy);
+
+            let toplevel = (*ctx.xdg_surface).__bindgen_anon_1.toplevel as *const _ as *mut wlr_xdg_toplevel;
+            let toplevel = &mut (*toplevel);
+            connect_listener!(ctx, toplevel, xdg_surface, request_move);
+            connect_listener!(ctx, toplevel, xdg_surface, request_resize);
+        }
+
+        v
+    }
+}
+
+implement_listener!(View, xdg_surface, map, libc::c_void);
+implement_listener!(View, xdg_surface, unmap, libc::c_void);
+implement_listener!(View, xdg_surface, destroy, libc::c_void);
+implement_listener!(View, xdg_surface, request_move, libc::c_void);
+implement_listener!(View, xdg_surface, request_resize, wlr_xdg_toplevel_resize_event);
+impl View {
+    fn xdg_surface_map(self: Pin<&mut Self>, _: *mut libc::c_void) {
+        println!("View map!");
+    }
+    fn xdg_surface_unmap(self: Pin<&mut Self>, _: *mut libc::c_void) {
+        println!("View unmap!");
+    }
+    fn xdg_surface_destroy(self: Pin<&mut Self>, _: *mut libc::c_void) {
+        println!("View destroy!");
+    }
+    fn xdg_surface_request_move(self: Pin<&mut Self>, _: *mut libc::c_void) {
+        println!("View request move!");
+    }
+    fn xdg_surface_request_resize(self: Pin<&mut Self>, event: *mut wlr_xdg_toplevel_resize_event) {
+        println!("View request resize!");
     }
 }
