@@ -135,11 +135,16 @@ impl Server {
         Ok(c)
     }
 
-    pub fn main_loop(mut self: Pin<&mut Self>) {
+    pub fn poll_events(mut self: Pin<&mut Self>) -> impl Iterator<Item=Event> {
         unsafe {
             let ctx = self.as_mut().get_unchecked_mut();
             ctx.dead_views.clear();
-            ffi_dispatch!(WAYLAND_SERVER_HANDLE, wl_display_run, ctx.display as *mut _);
+            let el = ffi_dispatch!(WAYLAND_SERVER_HANDLE, wl_display_get_event_loop, ctx.display as *mut _) as *mut wayland_sys::server::wl_event_loop;
+            ffi_dispatch!(WAYLAND_SERVER_HANDLE, wl_display_flush_clients, ctx.display as *mut _);
+            ffi_dispatch!(WAYLAND_SERVER_HANDLE, wl_event_loop_dispatch, el, -1);
+            let mut events = VecDeque::new();
+            std::mem::swap(&mut events, &mut ctx.event_queue);
+            events.into_iter()
         }
     }
 }
@@ -453,6 +458,7 @@ impl View {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum Event {
     CursorMotion {
         time_ms: u32,
