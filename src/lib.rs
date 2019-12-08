@@ -147,6 +147,10 @@ impl Server {
             events.into_iter()
         }
     }
+    pub fn get_output<'a>(self: Pin<&'a mut Self>, idx: Index) -> Pin<&'a mut Output> {
+        let ctx = unsafe { self.get_unchecked_mut() };
+        ctx.outputs[idx].as_mut()
+    }
 }
 
 impl std::ops::Drop for Server {
@@ -234,7 +238,10 @@ impl Server {
         let view = View::new(&self.as_ref(), surface_ptr);
 
         let ctx = unsafe { self.get_unchecked_mut() };
-        ctx.views.insert(view);
+        let idx = ctx.views.insert(view);
+        ctx.event_queue.push_back(Event::XdgSurfaceNew {
+            view: idx,
+        });
     }
     fn cursor_motion(self: Pin<&mut Self>, event: *mut wlr_event_pointer_motion) {
         let e = unsafe { &*(event) };
@@ -322,6 +329,82 @@ impl Output {
         }
 
         o
+    }
+    pub fn render_views(self: Pin<&mut Self>, views: impl Iterator<Item=(Index, Rect)>) {
+        let ctx = unsafe { self.get_unchecked_mut() };
+        let server = unsafe { &mut (*ctx.server) };
+        let renderer = server.renderer;
+
+        unsafe {
+            if !wlr_output_attach_render(ctx.output, std::ptr::null_mut()) {
+                return;
+            }
+            let mut w: i32 = 0;
+            let mut h: i32 = 0;
+            wlr_output_effective_resolution(ctx.output, &mut w as *mut _, &mut h as *mut _);
+            wlr_renderer_begin(renderer, w, h);
+            let color = [0.3, 0.3, 0.3, 1.0];
+            wlr_renderer_clear(renderer, color.as_ptr());
+
+            struct CbData {
+                r: Rect,
+                o: *mut wlr_output,
+                ol: *mut wlr_output_layout,
+                rend: *mut wlr_renderer,
+                when: timespec,
+            };
+            unsafe extern "C" fn surface_cb(
+                surface: *mut wlr_surface,
+                sx: i32,
+                sy: i32,
+                data: *mut libc::c_void
+            ) {
+                let data = &*(data as *mut CbData);
+                let tex = wlr_surface_get_texture(surface);
+                if tex.is_null() {
+                    return;
+                }
+                let mut ox: f64 = 0.;
+                let mut oy: f64 = 0.;
+                wlr_output_layout_output_coords(data.ol, data.o, &mut ox as *mut _, &mut oy as *mut _);
+                ox += (data.r.x + sx) as f64;
+                oy += (data.r.y + sy) as f64;
+
+                let scale = (*data.o).scale as f64;
+                let wbox = wlr_box {
+                    x: (ox * scale) as i32,
+                    y: (oy * scale) as i32,
+                    width: ((*surface).current.width as f64 * scale) as i32,
+                    height: ((*surface).current.height as f64 * scale) as i32,
+                };
+                let mut matrix = [0.0f32; 9];
+                let trans = wlr_output_transform_invert((*surface).current.transform);
+                wlr_matrix_project_box(matrix.as_mut_ptr(), (&wbox) as *const _, trans, 0., (*data.o).transform_matrix.as_ptr());
+                wlr_render_texture_with_matrix(data.rend, tex, matrix.as_ptr(), 1.);
+                wlr_surface_send_frame_done(surface, &data.when as *const _);
+            }
+            for (idx, r) in views {
+                let view = server.views[idx].as_ref();
+                let when = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("Time travel");
+                let when = timespec {
+                    tv_sec: when.as_secs() as i64,
+                    tv_nsec: when.subsec_nanos() as i64,
+                };
+                let mut data = CbData {
+                    r: r,
+                    o: ctx.output,
+                    ol: server.output_layout,
+                    rend: renderer,
+                    when,
+                };
+                wlr_xdg_surface_for_each_surface(view.xdg_surface, Some(surface_cb), &mut data as *mut _ as *mut _);
+
+            }
+
+            wlr_output_render_software_cursors(ctx.output, std::ptr::null_mut());
+            wlr_renderer_end(renderer);
+            wlr_output_commit(ctx.output);
+        }
     }
 }
 
@@ -429,6 +512,10 @@ impl View {
         }).expect("cant find view in arena");
         let v = server.views.remove(index).expect("cant find view to remove");
         server.dead_views.push(v);
+
+        server.event_queue.push_back(Event::XdgSurfaceDestroy {
+            view: index,
+        });
     }
     fn xdg_surface_request_move(self: Pin<&mut Self>, _: *mut libc::c_void) {
         let ctx = unsafe { self.get_unchecked_mut() };
@@ -509,4 +596,18 @@ pub enum Event {
     XdgSurfaceUnmap {
         view: Index,
     },
+    XdgSurfaceNew {
+        view: Index,
+    },
+    XdgSurfaceDestroy {
+        view: Index,
+    },
+}
+
+#[derive(Clone, Copy)]
+pub struct Rect {
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
 }
