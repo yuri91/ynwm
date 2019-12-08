@@ -135,12 +135,20 @@ impl Server {
         Ok(c)
     }
 
-    pub fn poll_events(mut self: Pin<&mut Self>) -> impl Iterator<Item=Event> {
+    pub fn poll_events(mut self: Pin<&mut Self>) -> impl Iterator<Item = Event> {
         unsafe {
             let ctx = self.as_mut().get_unchecked_mut();
             ctx.dead_views.clear();
-            let el = ffi_dispatch!(WAYLAND_SERVER_HANDLE, wl_display_get_event_loop, ctx.display as *mut _) as *mut wayland_sys::server::wl_event_loop;
-            ffi_dispatch!(WAYLAND_SERVER_HANDLE, wl_display_flush_clients, ctx.display as *mut _);
+            let el = ffi_dispatch!(
+                WAYLAND_SERVER_HANDLE,
+                wl_display_get_event_loop,
+                ctx.display as *mut _
+            ) as *mut wayland_sys::server::wl_event_loop;
+            ffi_dispatch!(
+                WAYLAND_SERVER_HANDLE,
+                wl_display_flush_clients,
+                ctx.display as *mut _
+            );
             ffi_dispatch!(WAYLAND_SERVER_HANDLE, wl_event_loop_dispatch, el, -1);
             let mut events = VecDeque::new();
             std::mem::swap(&mut events, &mut ctx.event_queue);
@@ -239,61 +247,50 @@ impl Server {
 
         let ctx = unsafe { self.get_unchecked_mut() };
         let idx = ctx.views.insert(view);
-        ctx.event_queue.push_back(Event::XdgSurfaceNew {
-            view: idx,
-        });
+        ctx.event_queue
+            .push_back(Event::XdgSurfaceNew { view: idx });
     }
     fn cursor_motion(self: Pin<&mut Self>, event: *mut wlr_event_pointer_motion) {
         let e = unsafe { &*(event) };
         let ctx = unsafe { self.get_unchecked_mut() };
-        ctx.event_queue.push_back(
-            Event::CursorMotion {
-                time_ms: e.time_msec,
-                delta_x: e.delta_x,
-                delta_y: e.delta_y,
-            }
-        );
+        ctx.event_queue.push_back(Event::CursorMotion {
+            time_ms: e.time_msec,
+            delta_x: e.delta_x,
+            delta_y: e.delta_y,
+        });
     }
     fn cursor_motion_absolute(self: Pin<&mut Self>, event: *mut wlr_event_pointer_motion_absolute) {
         let e = unsafe { &*(event) };
         let ctx = unsafe { self.get_unchecked_mut() };
-        ctx.event_queue.push_back(
-            Event::CursorMotionAbsolute {
-                time_ms: e.time_msec,
-                x: e.x,
-                y: e.y,
-            }
-        );
+        ctx.event_queue.push_back(Event::CursorMotionAbsolute {
+            time_ms: e.time_msec,
+            x: e.x,
+            y: e.y,
+        });
     }
     fn cursor_button(self: Pin<&mut Self>, event: *mut wlr_event_pointer_button) {
         let e = unsafe { &*(event) };
         let ctx = unsafe { self.get_unchecked_mut() };
-        ctx.event_queue.push_back(
-            Event::CursorButton {
-                time_ms: e.time_msec,
-                state: e.state,
-                button: e.button,
-            }
-        );
+        ctx.event_queue.push_back(Event::CursorButton {
+            time_ms: e.time_msec,
+            state: e.state,
+            button: e.button,
+        });
     }
     fn cursor_axis(self: Pin<&mut Self>, event: *mut wlr_event_pointer_axis) {
         let e = unsafe { &*(event) };
         let ctx = unsafe { self.get_unchecked_mut() };
-        ctx.event_queue.push_back(
-            Event::CursorAxis {
-                time_ms: e.time_msec,
-                orientation: e.orientation,
-                source: e.source,
-                delta: e.delta,
-                delta_discrete: e.delta_discrete,
-            }
-        );
+        ctx.event_queue.push_back(Event::CursorAxis {
+            time_ms: e.time_msec,
+            orientation: e.orientation,
+            source: e.source,
+            delta: e.delta,
+            delta_discrete: e.delta_discrete,
+        });
     }
     fn cursor_frame(self: Pin<&mut Self>, _: *mut libc::c_void) {
         let ctx = unsafe { self.get_unchecked_mut() };
-        ctx.event_queue.push_back(
-            Event::CursorFrame
-        );
+        ctx.event_queue.push_back(Event::CursorFrame);
     }
     fn seat_request_set_cursor(
         self: Pin<&mut Self>,
@@ -330,7 +327,7 @@ impl Output {
 
         o
     }
-    pub fn render_views(self: Pin<&mut Self>, views: impl Iterator<Item=(Index, Rect)>) {
+    pub fn render_views(self: Pin<&mut Self>, views: impl Iterator<Item = (Index, Rect)>) {
         let ctx = unsafe { self.get_unchecked_mut() };
         let server = unsafe { &mut (*ctx.server) };
         let renderer = server.renderer;
@@ -357,7 +354,7 @@ impl Output {
                 surface: *mut wlr_surface,
                 sx: i32,
                 sy: i32,
-                data: *mut libc::c_void
+                data: *mut libc::c_void,
             ) {
                 let data = &*(data as *mut CbData);
                 let tex = wlr_surface_get_texture(surface);
@@ -366,7 +363,12 @@ impl Output {
                 }
                 let mut ox: f64 = 0.;
                 let mut oy: f64 = 0.;
-                wlr_output_layout_output_coords(data.ol, data.o, &mut ox as *mut _, &mut oy as *mut _);
+                wlr_output_layout_output_coords(
+                    data.ol,
+                    data.o,
+                    &mut ox as *mut _,
+                    &mut oy as *mut _,
+                );
                 ox += (data.r.x + sx) as f64;
                 oy += (data.r.y + sy) as f64;
 
@@ -379,13 +381,21 @@ impl Output {
                 };
                 let mut matrix = [0.0f32; 9];
                 let trans = wlr_output_transform_invert((*surface).current.transform);
-                wlr_matrix_project_box(matrix.as_mut_ptr(), (&wbox) as *const _, trans, 0., (*data.o).transform_matrix.as_ptr());
+                wlr_matrix_project_box(
+                    matrix.as_mut_ptr(),
+                    (&wbox) as *const _,
+                    trans,
+                    0.,
+                    (*data.o).transform_matrix.as_ptr(),
+                );
                 wlr_render_texture_with_matrix(data.rend, tex, matrix.as_ptr(), 1.);
                 wlr_surface_send_frame_done(surface, &data.when as *const _);
             }
             for (idx, r) in views {
                 let view = server.views[idx].as_ref();
-                let when = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("Time travel");
+                let when = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .expect("Time travel");
                 let when = timespec {
                     tv_sec: when.as_secs() as i64,
                     tv_nsec: when.subsec_nanos() as i64,
@@ -397,8 +407,11 @@ impl Output {
                     rend: renderer,
                     when,
                 };
-                wlr_xdg_surface_for_each_surface(view.xdg_surface, Some(surface_cb), &mut data as *mut _ as *mut _);
-
+                wlr_xdg_surface_for_each_surface(
+                    view.xdg_surface,
+                    Some(surface_cb),
+                    &mut data as *mut _ as *mut _,
+                );
             }
 
             wlr_output_render_software_cursors(ctx.output, std::ptr::null_mut());
@@ -413,15 +426,15 @@ impl Output {
     fn output_frame(self: Pin<&mut Self>, _: *mut libc::c_void) {
         let ctx = unsafe { self.get_unchecked_mut() };
         let server = unsafe { &mut (*ctx.server) };
-        let (index, _) = server.outputs.iter().find(|&(_, o)| {
-            o.as_ref().get_ref() as *const _ == ctx as *const _
-        }).expect("cant find output in arena");
-        server.event_queue.push_back(
-            Event::OutputFrame {
-                output: index,
-                when: std::time::Instant::now(),
-            }
-        );
+        let (index, _) = server
+            .outputs
+            .iter()
+            .find(|&(_, o)| o.as_ref().get_ref() as *const _ == ctx as *const _)
+            .expect("cant find output in arena");
+        server.event_queue.push_back(Event::OutputFrame {
+            output: index,
+            when: std::time::Instant::now(),
+        });
     }
 }
 
@@ -483,65 +496,72 @@ impl View {
     fn xdg_surface_map(self: Pin<&mut Self>, _: *mut libc::c_void) {
         let ctx = unsafe { self.get_unchecked_mut() };
         let server = unsafe { &mut (*ctx.server) };
-        let (index, _) = server.views.iter().find(|&(_, o)| {
-            o.as_ref().get_ref() as *const _ == ctx as *const _
-        }).expect("cant find view in arena");
-        server.event_queue.push_back(
-            Event::XdgSurfaceMap {
-                view: index,
-            }
-        );
+        let (index, _) = server
+            .views
+            .iter()
+            .find(|&(_, o)| o.as_ref().get_ref() as *const _ == ctx as *const _)
+            .expect("cant find view in arena");
+        server
+            .event_queue
+            .push_back(Event::XdgSurfaceMap { view: index });
     }
     fn xdg_surface_unmap(self: Pin<&mut Self>, _: *mut libc::c_void) {
         let ctx = unsafe { self.get_unchecked_mut() };
         let server = unsafe { &mut (*ctx.server) };
-        let (index, _) = server.views.iter().find(|&(_, o)| {
-            o.as_ref().get_ref() as *const _ == ctx as *const _
-        }).expect("cant find view in arena");
-        server.event_queue.push_back(
-            Event::XdgSurfaceUnmap {
-                view: index,
-            }
-        );
+        let (index, _) = server
+            .views
+            .iter()
+            .find(|&(_, o)| o.as_ref().get_ref() as *const _ == ctx as *const _)
+            .expect("cant find view in arena");
+        server
+            .event_queue
+            .push_back(Event::XdgSurfaceUnmap { view: index });
     }
     fn xdg_surface_destroy(self: Pin<&mut Self>, _: *mut libc::c_void) {
         let ctx = unsafe { self.get_unchecked_mut() };
         let server = unsafe { &mut (*ctx.server) };
-        let (index, _) = server.views.iter().find(|&(_, o)| {
-            o.as_ref().get_ref() as *const _ == ctx as *const _
-        }).expect("cant find view in arena");
-        let v = server.views.remove(index).expect("cant find view to remove");
+        let (index, _) = server
+            .views
+            .iter()
+            .find(|&(_, o)| o.as_ref().get_ref() as *const _ == ctx as *const _)
+            .expect("cant find view in arena");
+        let v = server
+            .views
+            .remove(index)
+            .expect("cant find view to remove");
         server.dead_views.push(v);
 
-        server.event_queue.push_back(Event::XdgSurfaceDestroy {
-            view: index,
-        });
+        server
+            .event_queue
+            .push_back(Event::XdgSurfaceDestroy { view: index });
     }
     fn xdg_surface_request_move(self: Pin<&mut Self>, _: *mut libc::c_void) {
         let ctx = unsafe { self.get_unchecked_mut() };
         let server = unsafe { &mut (*ctx.server) };
-        let (index, _) = server.views.iter().find(|&(_, o)| {
-            o.as_ref().get_ref() as *const _ == ctx as *const _
-        }).expect("cant find view in arena");
-        server.event_queue.push_back(
-            Event::XdgToplevelRequestMove {
-                view: index,
-            }
-        );
+        let (index, _) = server
+            .views
+            .iter()
+            .find(|&(_, o)| o.as_ref().get_ref() as *const _ == ctx as *const _)
+            .expect("cant find view in arena");
+        server
+            .event_queue
+            .push_back(Event::XdgToplevelRequestMove { view: index });
     }
     fn xdg_surface_request_resize(self: Pin<&mut Self>, event: *mut wlr_xdg_toplevel_resize_event) {
         let e = unsafe { &*(event) };
         let ctx = unsafe { self.get_unchecked_mut() };
         let server = unsafe { &mut (*ctx.server) };
-        let (index, _) = server.views.iter().find(|&(_, o)| {
-            o.as_ref().get_ref() as *const _ == ctx as *const _
-        }).expect("cant find view in arena");
-        server.event_queue.push_back(
-            Event::XdgToplevelRequestResize {
+        let (index, _) = server
+            .views
+            .iter()
+            .find(|&(_, o)| o.as_ref().get_ref() as *const _ == ctx as *const _)
+            .expect("cant find view in arena");
+        server
+            .event_queue
+            .push_back(Event::XdgToplevelRequestResize {
                 view: index,
                 edges: e.edges,
-            }
-        );
+            });
     }
 }
 

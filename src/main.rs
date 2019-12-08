@@ -1,6 +1,6 @@
-use ynwm::*;
-use std::pin::Pin;
 use generational_arena::Index;
+use std::pin::Pin;
+use ynwm::*;
 
 struct ViewData {
     view: Index,
@@ -17,26 +17,35 @@ fn main() {
                     views.push(ViewData {
                         view,
                         rect: Rect {
-                            x:0,
-                            y:0,
-                            w:0,
-                            h:0,
+                            x: 0,
+                            y: 0,
+                            w: 0,
+                            h: 0,
                         },
                         mapped: false,
                     });
-                },
+                }
                 Event::XdgSurfaceDestroy { view } => {
-                    let idx = views.iter().position(|i| i.view == view).expect("view not found");
+                    let idx = views
+                        .iter()
+                        .position(|i| i.view == view)
+                        .expect("view not found");
                     views.remove(idx);
-                },
+                }
                 Event::XdgSurfaceMap { view } => {
-                    let idx = views.iter().position(|i| i.view == view).expect("view not found");
+                    let idx = views
+                        .iter()
+                        .position(|i| i.view == view)
+                        .expect("view not found");
                     views[idx].mapped = true;
-                },
+                }
                 Event::XdgSurfaceUnmap { view } => {
-                    let idx = views.iter().position(|i| i.view == view).expect("view not found");
+                    let idx = views
+                        .iter()
+                        .position(|i| i.view == view)
+                        .expect("view not found");
                     views[idx].mapped = false;
-                },
+                }
                 Event::OutputFrame { output, when } => {
                     let output = ctx.as_mut().get_output(output);
                     let to_render = views.iter().filter_map(|v| {
@@ -47,9 +56,9 @@ fn main() {
                         }
                     });
                     output.render_views(to_render);
-                },
+                }
                 _ => {
-                    println!("{:?}",e);
+                    println!("{:?}", e);
                 }
             }
         }
