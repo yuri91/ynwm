@@ -159,6 +159,25 @@ impl Server {
         let ctx = unsafe { self.get_unchecked_mut() };
         ctx.outputs[idx].as_mut()
     }
+    pub fn cursor_move(self: Pin<&mut Self>, delta_x: f64, delta_y: f64) {
+        let ctx = unsafe { self.get_unchecked_mut() };
+        unsafe {
+            wlr_cursor_move(ctx.cursor, std::ptr::null_mut(), delta_x, delta_y);
+        }
+    }
+    pub fn cursor_move_absolute(self: Pin<&mut Self>, x: f64, y: f64) {
+        let ctx = unsafe { self.get_unchecked_mut() };
+        unsafe {
+            wlr_cursor_warp_absolute(ctx.cursor, std::ptr::null_mut(), x, y);
+        }
+    }
+    pub fn set_cursor_image(self: Pin<&mut Self>, name: &str) {
+        let ctx = unsafe { self.get_unchecked_mut() };
+        unsafe {
+            let cname = std::ffi::CString::new(name).expect("null byte inside passed str");
+            wlr_xcursor_manager_set_cursor_image(ctx.cursor_mgr, cname.as_ptr(), ctx.cursor);
+        }
+    }
 }
 
 impl std::ops::Drop for Server {
