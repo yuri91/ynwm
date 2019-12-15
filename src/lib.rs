@@ -155,9 +155,19 @@ impl Server {
             events.into_iter()
         }
     }
-    pub fn get_output<'a>(self: Pin<&'a mut Self>, idx: Index) -> Pin<&'a mut Output> {
+    pub fn get_output<'a>(&'a self, idx: Index) -> &'a Output {
+        self.outputs[idx].as_ref().get_ref()
+    }
+    pub fn get_output_mut<'a>(self: Pin<&'a mut Self>, idx: Index) -> Pin<&'a mut Output> {
         let ctx = unsafe { self.get_unchecked_mut() };
         ctx.outputs[idx].as_mut()
+    }
+    pub fn get_view<'a>(&'a self, idx: Index) -> &'a View {
+        self.views[idx].as_ref().get_ref()
+    }
+    pub fn get_view_mut<'a>(self: Pin<&'a mut Self>, idx: Index) -> Pin<&'a mut View> {
+        let ctx = unsafe { self.get_unchecked_mut() };
+        ctx.views[idx].as_mut()
     }
     pub fn cursor_move(self: Pin<&mut Self>, delta_x: f64, delta_y: f64) {
         let ctx = unsafe { self.get_unchecked_mut() };
@@ -176,6 +186,31 @@ impl Server {
         unsafe {
             let cname = std::ffi::CString::new(name).expect("null byte inside passed str");
             wlr_xcursor_manager_set_cursor_image(ctx.cursor_mgr, cname.as_ptr(), ctx.cursor);
+        }
+    }
+    pub fn get_cursor(&self) -> (f64, f64) {
+        unsafe {
+            ((*self.cursor).x, (*self.cursor).y)
+        }
+    }
+    pub fn pointer_clear_focus(&self) {
+        unsafe {
+            wlr_seat_pointer_clear_focus(self.seat);
+        }
+    }
+    pub fn pointer_notify_enter(&self, surface: &Surface, x: f64, y: f64) {
+        unsafe {
+            wlr_seat_pointer_notify_enter(self.seat, surface.surface, x, y);
+        }
+    }
+    pub fn pointer_notify_motion(&self, time_ms: u32, x: f64, y: f64) {
+        unsafe {
+            wlr_seat_pointer_notify_motion(self.seat, time_ms, x, y);
+        }
+    }
+    pub fn pointer_notify_frame(&self) {
+        unsafe {
+            wlr_seat_pointer_notify_frame(self.seat);
         }
     }
 }
@@ -254,7 +289,6 @@ impl Server {
         }
     }
     fn xdg_shell_new_surface(self: Pin<&mut Self>, surface_ptr: *mut wlr_xdg_surface) {
-        println!("new xdg surface!");
 
         unsafe {
             if (*surface_ptr).role != wlr_xdg_surface_role::WLR_XDG_SURFACE_ROLE_TOPLEVEL {
@@ -499,6 +533,43 @@ impl View {
 
         v
     }
+    pub fn get_rect(&self) -> Rect {
+        unsafe {
+            let mut geo_box = wlr_box {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            };
+            wlr_xdg_surface_get_geometry(self.xdg_surface, &mut geo_box as *mut _);
+            Rect {
+                x: geo_box.x,
+                y: geo_box.y,
+                w: geo_box.height,
+                h: geo_box.width,
+            }
+        }
+    }
+    pub fn surface_at<'a>(&'a self, rel_x: f64, rel_y: f64) -> Option<SurfaceHit<'a>> {
+        let mut hx = 0.;
+        let mut hy = 0.;
+        let surface = unsafe {
+            wlr_xdg_surface_surface_at(self.xdg_surface, rel_x, rel_y, &mut hx as *mut _, &mut hy as *mut _)
+        };
+
+        if surface == std::ptr::null_mut() {
+            None
+        } else {
+            Some(SurfaceHit {
+                hx,
+                hy,
+                surface: Surface {
+                    surface,
+                    _lifetime: std::marker::PhantomData,
+                },
+            })
+        }
+    }
 }
 
 implement_listener!(View, xdg_surface, map, libc::c_void);
@@ -649,4 +720,20 @@ pub struct Rect {
     pub y: i32,
     pub w: i32,
     pub h: i32,
+}
+
+impl Rect {
+    pub fn contains(&self, x: i32, y: i32) -> bool {
+        x >= self.x && x <= self.x+self.w && y >= self.y && y <= self.y+self.h
+    }
+}
+
+pub struct Surface<'a> {
+    surface: *mut wlr_surface,
+    _lifetime: std::marker::PhantomData<&'a View>,
+}
+pub struct SurfaceHit<'a> {
+    pub hx: f64,
+    pub hy: f64,
+    pub surface: Surface<'a>,
 }
