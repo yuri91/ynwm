@@ -159,6 +159,10 @@ impl Server {
         let ctx = unsafe { self.get_unchecked_mut() };
         ctx.outputs[idx].as_mut()
     }
+    pub fn get_view<'a>(self: Pin<&'a mut Self>, idx: Index) -> Pin<&'a mut View> {
+        let ctx = unsafe { self.get_unchecked_mut() };
+        ctx.views[idx].as_mut()
+    }
     pub fn cursor_move(self: Pin<&mut Self>, delta_x: f64, delta_y: f64) {
         let ctx = unsafe { self.get_unchecked_mut() };
         unsafe {
@@ -499,6 +503,43 @@ impl View {
 
         v
     }
+    pub fn get_rect(mut self: Pin<&mut Self>) -> Rect {
+        unsafe {
+            let ctx = self.as_mut().get_unchecked_mut();
+            let mut geo_box = wlr_box {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            };
+            wlr_xdg_surface_get_geometry(ctx.xdg_surface, &mut geo_box as *mut _);
+            Rect {
+                x: geo_box.x,
+                y: geo_box.y,
+                w: geo_box.height,
+                h: geo_box.width,
+            }
+        }
+    }
+    pub fn surface_at<'a>(mut self: Pin<&'a mut Self>, rel_x: f64, rel_y: f64) -> Option<SurfaceHit<'a>> {
+        let ctx = unsafe { self.as_mut().get_unchecked_mut() };
+        let mut hx = 0.;
+        let mut hy = 0.;
+        let surface = unsafe {
+            wlr_xdg_surface_surface_at(ctx.xdg_surface, rel_x, rel_y, &mut hx as *mut _, &mut hy as *mut _)
+        };
+
+        if surface == std::ptr::null_mut() {
+            None
+        } else {
+            Some(SurfaceHit {
+                hx,
+                hy,
+                surface,
+                _lifetime: std::marker::PhantomData,
+            })
+        }
+    }
 }
 
 implement_listener!(View, xdg_surface, map, libc::c_void);
@@ -649,4 +690,18 @@ pub struct Rect {
     pub y: i32,
     pub w: i32,
     pub h: i32,
+}
+
+impl Rect {
+    pub fn contains(&self, x: i32, y: i32) -> bool {
+        x >= self.x && x <= self.x+self.w && y >= self.y && y <= self.y+self.h
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct SurfaceHit<'a> {
+    pub hx: f64,
+    pub hy: f64,
+    pub surface: *mut wlr_surface,
+    _lifetime: std::marker::PhantomData<&'a mut View>,
 }
